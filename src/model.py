@@ -1,6 +1,6 @@
 
 
-# Se aplica el modelo a la fecha de interes, pero hay un lag minimo de 10 dias
+# Se aplica el modelo a la fecha de interes, pero hay un lag minimo de 10 dias, revisar
 # Librerias
 from pathlib import Path
 import joblib
