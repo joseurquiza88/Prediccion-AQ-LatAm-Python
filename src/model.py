@@ -9,7 +9,7 @@ import joblib
 ROOT_DIR = Path(__file__).resolve().parent.parent
 MODEL_DIR = ROOT_DIR / "models"
 
-
+#Funciones
 def load_model(estacion):
     """
     Carga el modelo entrenado correspondiente a una estación.
