@@ -1,8 +1,38 @@
 
 
 # Se aplica el modelo a la fecha de interes, pero hay un lag minimo de 10 dias
+# Librerias
+from pathlib import Path
+import joblib
 
 # Setear informacion de entrada
+ROOT_DIR = Path(__file__).resolve().parent.parent
+MODEL_DIR = ROOT_DIR / "models"
+
+from pathlib import Path
+import joblib
+
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+MODEL_DIR = ROOT_DIR / "models"
+
+
+def load_model(estacion):
+    """
+    Carga el modelo entrenado correspondiente a una estación.
+    """
+    model_path = MODEL_DIR / f"best_model_{estacion}.pkl"
+    modelo = joblib.load(model_path)
+    return modelo
+
+def predict(modelo, X):
+    """
+    Genera predicciones utilizando el modelo cargado.
+    """
+    y_pred = modelo.predict(X)
+    return y_pred
+
+
 # ---------------------------------------------------------
 # 1. Se abre AOD
 
