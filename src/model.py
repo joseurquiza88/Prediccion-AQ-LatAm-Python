@@ -9,13 +9,6 @@ import joblib
 ROOT_DIR = Path(__file__).resolve().parent.parent
 MODEL_DIR = ROOT_DIR / "models"
 
-from pathlib import Path
-import joblib
-
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-MODEL_DIR = ROOT_DIR / "models"
-
 
 def load_model(estacion):
     """
@@ -55,7 +48,6 @@ def predict(modelo, X):
 
 # ---------------------------------------------------------
 # 5. Se abre Elevacion
-
 
 
 
