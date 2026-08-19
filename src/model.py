@@ -12,7 +12,7 @@ MODEL_DIR = ROOT_DIR / "models"
 #Funciones
 def load_model(estacion):
     """
-    Carga el modelo entrenado correspondiente a una estación.
+    Carga el modelo entrenado correspondiente a un sitio.
     """
     model_path = MODEL_DIR / f"best_model_{estacion}.pkl"
     modelo = joblib.load(model_path)
