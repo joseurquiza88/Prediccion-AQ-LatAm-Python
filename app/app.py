@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image
 import dash_leaflet as dl
 from matplotlib.colors import LinearSegmentedColormap
+import plotly.express as px
 # ---------------------------------------------------------
 # Directorio principal del proyecto
 
@@ -20,7 +21,6 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 # Carpeta donde están los TIFF
 
 MAPS_DIR = ROOT_DIR / "data" / "processed" / "maps"
-
 
 # ---------------------------------------------------------
 # Buscar archivos TIFF
@@ -148,6 +148,82 @@ def raster_to_image(raster_path):
         image_url = f"data:image/png;base64,{encoded}"
 
         return image_url, bounds
+
+# ---------------------------------------------------------
+# Funcion para calcular el promedio del raster
+def calcular_promedio_raster(raster_path):
+
+    with rasterio.open(raster_path) as src:
+
+        data = src.read(1, masked=True)
+
+        promedio = round(data.mean(),2)
+
+    return float(promedio)
+#Test
+# prueba = calcular_promedio_raster(catalogo.iloc[0]["archivo"])
+# print("Promedio del primer mapa:", prueba)
+# ---------------------------------------------------------
+# Funcion para crear la serie temporal por ciudad
+def crear_serie_temporal(catalogo):
+
+    registros = []
+
+    for _, fila in catalogo.iterrows():
+
+        promedio = calcular_promedio_raster(fila["archivo"])
+
+        registros.append({
+            "ciudad": fila["ciudad"],
+            "anio": fila["anio"],
+            "mes": fila["mes"],
+            "pm25_promedio": promedio
+        })
+
+    serie = pd.DataFrame(registros)
+
+    # Orden cronológico
+    serie = serie.sort_values(
+        ["ciudad", "anio", "mes"]
+    ).reset_index(drop=True)
+
+    return serie
+#Test
+# ---------------------------------------------------------
+# Serie temporal
+
+TEMPORAL_DIR = ROOT_DIR / "data" / "processed" / "temporal"
+
+TEMPORAL_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+TEMPORAL_FILE = TEMPORAL_DIR / "pm25_temporal.csv"
+
+
+if TEMPORAL_FILE.exists():
+
+    print("Leyendo serie temporal existente...")
+
+    serie_temporal = pd.read_csv(TEMPORAL_FILE)
+
+else:
+
+    print("Creando serie temporal a partir de los TIFF...")
+
+    serie_temporal = crear_serie_temporal(catalogo)
+
+    serie_temporal.to_csv(
+        TEMPORAL_FILE,
+        index=False
+    )
+
+
+print("\n--- Serie temporal ---")
+print(serie_temporal.head())
+
+print("\nCantidad de registros:", len(serie_temporal))
 # ---------------------------------------------------------
 #  Probamos una sola imagen
 # raster_path = MAPS_DIR / "ET_PM2.5_M_02-2024_BA_V1.1.tif"
@@ -326,12 +402,32 @@ app.layout = html.Div([
         "position": "relative"
     }
 ),
-    html.H3("Información del píxel seleccionado"),
+        html.H3("Información del píxel seleccionado"),
 
     html.Div(
-    "Hacé click sobre el mapa para consultar el valor.",
-    id="pixel-info"
-)
+        "Hacé click sobre el mapa para consultar el valor.",
+        id="pixel-info"
+    ),
+
+    html.H3("Series temporales"),
+
+    html.Div(
+        [
+
+            dcc.Graph(
+                id="serie-temporal-ciudad"
+            ),
+
+            dcc.Graph(
+                id="serie-temporal-pixel"
+            )
+
+        ],
+        style={
+            "display": "flex",
+            "gap": "20px"
+        }
+    )
 
 ])
 
@@ -378,15 +474,6 @@ def actualizar_mapa(ciudad, anio, mes):
 
 # ---------------------------------------------------------
 # Callback para consultar el píxel
-
-# @app.callback(
-#     Output("pixel-info", "children"),
-#     Input("mapa", "clickData"),
-#     State("ciudad-dropdown", "value"),
-#     State("anio-dropdown", "value"),
-#     State("mes-dropdown", "value")
-# )
-
 @app.callback(
     Output("pixel-info", "children"),
     Input("mapa", "clickData"),
@@ -442,6 +529,147 @@ def mostrar_pixel(click, ciudad, anio, mes):
         html.P(f"Longitud: {lon:.4f}")
     ])
 
+
+# ---------------------------------------------------------
+# Callback para actualizar serie temporal
+
+@app.callback(
+    Output("serie-temporal-ciudad", "figure"),
+    Input("ciudad-dropdown", "value")#,
+    # title=f"Promedio ciudad - {ciudad}"
+)
+def actualizar_serie_temporal(ciudad):
+
+    datos = serie_temporal[
+        serie_temporal["ciudad"] == ciudad
+    ].copy()
+
+    datos["fecha"] = pd.to_datetime(
+        dict(
+            year=datos["anio"],
+            month=datos["mes"],
+            day=1
+        )
+    )
+
+    figura = px.line(
+        datos,
+        x="fecha",
+        y="pm25_promedio",
+        markers=True,
+        labels={
+            "fecha": "Fecha",
+            "pm25_promedio": "PM2.5 promedio (µg/m³)"
+        },
+        title=f"Concentración promedio mensual de PM2.5 - {ciudad}"
+    )
+
+    return figura
+
+# ---------------------------------------------------------
+# ---------------------------------------------------------
+# Callback para actualizar serie temporal por pixel
+
+@app.callback(
+    Output("serie-temporal-pixel", "figure"),
+    Input("mapa", "clickData"),
+    State("ciudad-dropdown", "value")
+)
+def actualizar_serie_pixel(click, ciudad):
+
+    # Si todavía no se hizo click
+    if click is None:
+        return px.line(
+            title="Promedio píxel - Hacé click sobre el mapa"
+        )
+
+    # Obtener coordenadas del click
+    lat = click["latlng"]["lat"]
+    lon = click["latlng"]["lng"]
+
+    print("Click para serie temporal:", lat, lon)
+
+    # -----------------------------------------------------
+    # Buscar todos los mapas de la ciudad seleccionada
+
+    registros = catalogo[
+        catalogo["ciudad"] == ciudad
+    ].copy()
+
+    datos_pixel = []
+
+    # -----------------------------------------------------
+    # Obtener el valor de ese mismo píxel
+    # para cada mes/año
+
+    for _, registro in registros.iterrows():
+
+        raster_path = registro["archivo"]
+
+        with rasterio.open(raster_path) as src:
+
+            valor = list(
+                src.sample([(lon, lat)])
+            )[0][0]
+
+            # Ignorar NoData
+            if src.nodata is not None and valor == src.nodata:
+                continue
+
+            # Ignorar NaN
+            if np.isnan(valor):
+                continue
+
+            datos_pixel.append({
+                "anio": registro["anio"],
+                "mes": registro["mes"],
+                "pm25_pixel": float(valor)
+            })
+
+    # -----------------------------------------------------
+    # Crear DataFrame
+
+    datos_pixel = pd.DataFrame(datos_pixel)
+
+    # Si no hay datos
+    if datos_pixel.empty:
+        return px.line(
+            title="Promedio píxel - Sin datos"
+        )
+
+    # -----------------------------------------------------
+    # Crear fecha
+
+    datos_pixel["fecha"] = pd.to_datetime(
+        dict(
+            year=datos_pixel["anio"],
+            month=datos_pixel["mes"],
+            day=1
+        )
+    )
+
+    # Orden cronológico
+
+    datos_pixel = datos_pixel.sort_values(
+        "fecha"
+    )
+
+    # -----------------------------------------------------
+    # Crear gráfico
+
+    figura = px.line(
+        datos_pixel,
+        x="fecha",
+        y="pm25_pixel",
+        markers=True,
+        title=f"Promedio píxel - {ciudad}",
+        labels={
+            "fecha": "Fecha",
+            "pm25_pixel": "PM2.5 (µg/m³)"
+        }
+    )
+
+    return figura
 
 # ---------------------------------------------------------
 # Ejecutar aplicación
