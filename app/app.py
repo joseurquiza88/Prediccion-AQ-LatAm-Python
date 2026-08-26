@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 import pandas as pd
 import rasterio
-from dash import Dash, html, dcc, Input, Output
+from dash import Dash, html, dcc, Input, Output, State
 import base64
 from io import BytesIO
 import numpy as np
@@ -185,6 +185,7 @@ app.layout = html.Div([
 
     html.H3("Seleccionar mapa"),
 
+
     html.Label("Ciudad"),
 
     dcc.Dropdown(
@@ -240,7 +241,8 @@ app.layout = html.Div([
                     id="raster-overlay",
                     url="",
                     bounds=bounds_iniciales,
-                    opacity=0.7
+                    opacity=0.7,
+                    interactive=True
                 )
 
             ],
@@ -323,6 +325,12 @@ app.layout = html.Div([
     style={
         "position": "relative"
     }
+),
+    html.H3("Información del píxel seleccionado"),
+
+    html.Div(
+    "Hacé click sobre el mapa para consultar el valor.",
+    id="pixel-info"
 )
 
 ])
@@ -365,6 +373,75 @@ def actualizar_mapa(ciudad, anio, mes):
         ],
         center
     )
+
+
+
+# ---------------------------------------------------------
+# Callback para consultar el píxel
+
+# @app.callback(
+#     Output("pixel-info", "children"),
+#     Input("mapa", "clickData"),
+#     State("ciudad-dropdown", "value"),
+#     State("anio-dropdown", "value"),
+#     State("mes-dropdown", "value")
+# )
+
+@app.callback(
+    Output("pixel-info", "children"),
+    Input("mapa", "clickData"),
+    State("ciudad-dropdown", "value"),
+    State("anio-dropdown", "value"),
+    State("mes-dropdown", "value")
+)
+def mostrar_pixel(click, ciudad, anio, mes):
+
+    if click is None:
+        return "Hacé click sobre el mapa para consultar el valor."
+
+    # Obtener coordenadas del click
+    lat = click["latlng"]["lat"]
+    lon = click["latlng"]["lng"]
+
+    # Buscar el raster correspondiente
+    registro = catalogo[
+        (catalogo["ciudad"] == ciudad) &
+        (catalogo["anio"] == anio) &
+        (catalogo["mes"] == mes)
+    ]
+
+    if registro.empty:
+        return "No se encontró el mapa seleccionado."
+
+    registro = registro.iloc[0]
+    raster_path = registro["archivo"]
+
+    # Consultar el valor del píxel
+    with rasterio.open(raster_path) as src:
+
+        valor = list(
+            src.sample([(lon, lat)])
+        )[0][0]
+
+        # Comprobar NoData
+        if src.nodata is not None and valor == src.nodata:
+            return html.Div([
+                html.P(f"Ciudad: {ciudad}"),
+                html.P(f"Año: {anio}"),
+                html.P(f"Mes: {mes}"),
+                html.P("Sin datos en este punto.")
+            ])
+
+    # Mostrar información
+    return html.Div([
+        html.P(f"Ciudad: {ciudad}"),
+        html.P(f"Año: {anio}"),
+        html.P(f"Mes: {mes}"),
+        html.P(f"PM2.5: {valor:.2f} µg/m³"),
+        html.P(f"Latitud: {lat:.4f}"),
+        html.P(f"Longitud: {lon:.4f}")
+    ])
+
 
 # ---------------------------------------------------------
 # Ejecutar aplicación
